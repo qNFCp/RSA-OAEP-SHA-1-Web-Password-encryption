@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSA Encryption</title>
+</head>
+<body>
+    <h1>RSA Encryption Example</h1>
+    <form id="encryptForm">
+        <label for="password">Enter Password:</label>
+        <input type="password" id="password" required>
+        <button type="submit">Encrypt and Send</button>
+    </form>
+
+    <script>
+        // 获取公钥
+        async function getPublicKey() {
+            const response = await fetch('rsa.php?action=getPublicKey');
+            const data = await response.json();
+            return data.publicKey;
+        }
+
+        // 将 PEM 公钥转换为 CryptoKey
+        async function importPublicKey(pem) {
+            // 清理公钥内容
+            const cleanPem = pem.replace(/(-----BEGIN PUBLIC KEY-----|-----END PUBLIC KEY-----|\s)/g, '');
+            const binaryDer = Uint8Array.from(atob(cleanPem), char => char.charCodeAt(0));
+            return crypto.subtle.importKey(
+                'spki',
+                binaryDer.buffer,
+                {
+                    name: 'RSA-OAEP',
+                    hash: { name: 'SHA-1' }, // 显式指定使用 SHA-1 (RSA-OAEP 默认使用 SHA-1)
+                },
+                true,
+                ['encrypt']
+            );
+        }
+
+        // 使用公钥加密数据
+        async function encryptData(publicKey, data) {
+            const encoder = new TextEncoder();
+            const encodedData = encoder.encode(data);
+            const encrypted = await crypto.subtle.encrypt(
+                {
+                    name: 'RSA-OAEP',
+                },
+                publicKey,
+                encodedData
+            );
+            return btoa(String.fromCharCode(...new Uint8Array(encrypted))); // 转为 Base64
+        }
+
+        // 处理表单提交
+        document.getElementById('encryptForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('rsa.php?action=getPublicKey');
+                const data = await response.json();
+
+                // 获取公钥
+                const publicKeyPem = data.publicKey;
+                const publicKey = await importPublicKey(publicKeyPem);
+
+                // 加密数据
+                const encryptedPassword = await encryptData(publicKey, password);
+
+                // 发送加密数据
+                const result = await fetch('rsa.php?action=decrypt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ encryptedData: encryptedPassword }),
+                });
+
+                const resultData = await result.json();
+                console.log('Decrypted response from server:', resultData);
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        });
+    </script>
+</body>
+</html>
